@@ -6,6 +6,7 @@
     <title>Reserva de Cita</title>
     
     <style>
+        /* (El CSS es el mismo que en la respuesta anterior, no hay cambios) */
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             display: grid;
@@ -100,8 +101,6 @@
             cursor: not-allowed;
             text-decoration: line-through;
         }
-
-        /* Estilo para el nuevo botón de consulta */
         .boton-consultar {
             font-family: inherit;
             font-size: 1.1rem;
@@ -109,7 +108,7 @@
             padding: 0.7rem 1rem;
             border: none;
             border-radius: 6px;
-            background-color: #28a745; /* Verde para diferenciar */
+            background-color: #28a745;
             color: white;
             cursor: pointer;
             transition: all 0.2s ease;
@@ -121,8 +120,6 @@
             background-color: #a0a0a0;
             cursor: not-allowed;
         }
-
-
         .boton-enviar {
             font-family: inherit;
             font-size: 1.2rem;
@@ -130,7 +127,7 @@
             padding: 0.8rem 1rem;
             border: none;
             border-radius: 8px;
-            background-color: #0056b3; /* Azul para la acción final */
+            background-color: #0056b3;
             color: white;
             cursor: pointer;
             transition: all 0.2s ease;
@@ -142,8 +139,7 @@
             background-color: #a0a0a0;
             cursor: not-allowed;
         }
-
-        #submitStatus, #horasStatus {
+        #submitStatus, #horasStatus, #consultaStatus {
             margin-top: 1rem;
             font-size: 1rem;
             font-weight: 600;
@@ -196,19 +192,24 @@
             </div>
         </div>
 
-        <div class="paso" id="pasoFecha" style="display: none;">
-            <label for="miFecha">3. Elige el día:</label>
-            <input type="date" id="miFecha">
-            
-            <button type="button" id="checkBtn" class="boton-consultar" style="display: none;">
-                Consultar Disponibilidad
+        <div class="paso" id="pasoConsulta">
+            <button type="button" id="checkBtn" class="boton-consultar" disabled>
+                Buscar Disponibilidad
             </button>
+            <div id="consultaStatus"></div>
         </div>
-        
-        <div class="paso" id="pasoHora" style="display: none;">
-            <label>4. Elige la hora (límite 50 pers.):</label>
-            <div id="horasStatus" class="status-sending"></div>
-            <div id="contenedorHoras"></div>
+
+        <div id="calendario-container" style="display: none;">
+            <div class="paso" id="pasoFecha">
+                <label for="miFecha">3. Elige el día:</label>
+                <input type="date" id="miFecha">
+                <div id="horasStatus" class="status-sending"></div>
+            </div>
+            
+            <div class="paso" id="pasoHora" style="display: none;">
+                <label>4. Elige la hora (límite 50 pers.):</label>
+                <div id="contenedorHoras"></div>
+            </div>
         </div>
         
         <button type="button" id="enviarBtn" class="boton-enviar" disabled>
@@ -228,22 +229,23 @@
         const nombreInput = document.getElementById('miNombre');
         const telefonoInput = document.getElementById('miTelefono');
         const emailInput = document.getElementById('miEmail');
+        
+        const checkBtn = document.getElementById('checkBtn');
+        const consultaStatus = document.getElementById('consultaStatus');
+        
+        const calendarioContainer = document.getElementById('calendario-container');
         const fechaInput = document.getElementById('miFecha');
         const horasDiv = document.getElementById('contenedorHoras');
         const horasStatus = document.getElementById('horasStatus');
+        const pasoHora = document.getElementById('pasoHora');
+        
         const enviarBtn = document.getElementById('enviarBtn');
         const submitStatusDiv = document.getElementById('submitStatus');
         const resultadoDiv = document.getElementById('resultado');
-        const checkBtn = document.getElementById('checkBtn');
-
+        
         // --- 2. CONFIGURACIÓN Y URLs ---
-        
-        // --- CAMBIO: URL DE RESERVA ACTUALIZADA ---
         const n8nWebhookUrl = 'https://n8n-server.griffin-paridae.ts.net/webhook/Reserva';
-        
-        // --- CAMBIO: URL DE DISPONIBILIDAD ACTUALIZADA ---
         const n8nDisponibilidadUrl = 'https://n8n-server.griffin-paridae.ts.net/webhook/disponibilidad'; 
-        
         const limitePersonasPorHora = 50;
 
         // --- 3. VARIABLES DE ESTADO ---
@@ -253,11 +255,14 @@
         let emailSeleccionado = null;
         let fechaSeleccionada = null;
         let horaSeleccionada = null;
-        let datosPersonalesCompletos = false;
+        
+        let disponibilidadCache = {}; // Guardará el resumen: {"2025-10-25": {"12:00": 45}, ...}
+        let diasCompletos = [];
+        let todasLasHoras = [];
+
 
         // --- 4. INICIALIZACIÓN ---
         
-        // Bloquear días pasados
         function getHoyFormato() {
             const hoy = new Date();
             hoy.setMinutes(hoy.getMinutes() - hoy.getTimezoneOffset());
@@ -265,15 +270,21 @@
         }
         fechaInput.min = getHoyFormato();
 
-        // Generar botones
         generarBotonesHora();
         generarBotonesPersonas();
         
         function generarBotonesHora() {
             for (let hora = 12; hora <= 23; hora++) {
                 const horaStr = hora.toString().padStart(2, '0');
-                crearBotonHora(`${horaStr}:00`);
-                if (hora < 23) { crearBotonHora(`${horaStr}:30`); }
+                const hora1 = `${horaStr}:00`;
+                todasLasHoras.push(hora1);
+                crearBotonHora(hora1);
+                
+                if (hora < 23) {
+                    const hora2 = `${horaStr}:30`;
+                    todasLasHoras.push(hora2);
+                    crearBotonHora(hora2); 
+                }
             }
         }
         function crearBotonHora(textoHora) {
@@ -298,134 +309,190 @@
 
         // --- 5. MANEJADORES DE EVENTOS ---
         
-        // PASO 1: PERSONAS
+        // PASO 1 y 2: PERSONAS Y DATOS
         personasDiv.addEventListener('click', (e) => {
             if (e.target.classList.contains('boton-persona')) {
                 personasSeleccionadas = e.target.dataset.personas;
                 document.querySelectorAll('.boton-persona').forEach(btn => btn.classList.remove('selected'));
                 e.target.classList.add('selected');
-                revisarPasosCompletos();
+                revisarPasosPrevios();
             }
         });
-
-        // PASO 2: DATOS
         nombreInput.addEventListener('input', () => {
             nombreSeleccionado = nombreInput.value.trim();
-            revisarPasosCompletos();
+            revisarPasosPrevios();
         });
         telefonoInput.addEventListener('input', () => {
             telefonoSeleccionado = telefonoInput.value.trim();
-            revisarPasosCompletos();
+            revisarPasosPrevios();
         });
         emailInput.addEventListener('input', () => {
             emailSeleccionado = emailInput.value.trim();
-            revisarPasosCompletos();
+            revisarPasosPrevios();
         });
 
-        // PASO 3: FECHA
+        // PASO 3 - BOTÓN DE CONSULTA
+        checkBtn.addEventListener('click', consultarDisponibilidadTotal);
+
+
+        // PASO 4 - FECHA (Filtro local)
         fechaInput.addEventListener('change', () => {
             fechaSeleccionada = fechaInput.value;
             horaSeleccionada = null; // Reiniciar hora si cambia el día
-            
-            document.getElementById('pasoHora').style.display = 'none'; // Ocultar horas anteriores
-            checkBtn.style.display = 'block'; // Mostrar botón "Consultar"
-            checkBtn.disabled = false; // Habilitarlo
-            
-            revisarPasosCompletos(); // Actualiza el resumen
+            filtrarHorasDisponibles(); // Filtra usando la caché
+            actualizarResumenFinal();
         });
 
-        // BOTÓN DE CONSULTA
-        checkBtn.addEventListener('click', consultarDisponibilidad);
-
-        // PASO 4: HORA
+        // PASO 5: HORA
         horasDiv.addEventListener('click', (e) => {
             if (e.target.classList.contains('boton-hora') && !e.target.disabled) {
                 horaSeleccionada = e.target.dataset.hora;
                 document.querySelectorAll('.boton-hora').forEach(btn => btn.classList.remove('selected'));
                 e.target.classList.add('selected');
-                revisarPasosCompletos();
+                actualizarResumenFinal();
             }
         });
         
-        // PASO 5: ENVIAR RESERVA
+        // PASO 6: ENVIAR RESERVA
         enviarBtn.addEventListener('click', enviarDatos);
 
         
         // --- 6. FUNCIONES PRINCIPALES ---
 
-        // Revisa los primeros pasos para mostrar el calendario
-        function revisarPasosCompletos() {
-            datosPersonalesCompletos = personasSeleccionadas && nombreSeleccionado && telefonoSeleccionado && emailSeleccionado;
-            
-            if (datosPersonalesCompletos) {
-                document.getElementById('pasoFecha').style.display = 'block';
-            } else {
-                document.getElementById('pasoFecha').style.display = 'none';
-            }
-            
+        // Revisa los pasos 1 y 2 para activar el botón "Buscar Disponibilidad"
+        function revisarPasosPrevios() {
+            const datosCompletos = personasSeleccionadas && nombreSeleccionado && telefonoSeleccionado && emailSeleccionado;
+            checkBtn.disabled = !datosCompletos;
             actualizarResumenFinal();
         }
 
-        // Consulta el webhook GET
-        async function consultarDisponibilidad() {
+        // Llama a n8n (GET) y recibe la lista de TODAS las reservas
+        async function consultarDisponibilidadTotal() {
             
-            document.getElementById('pasoHora').style.display = 'block';
-            horasStatus.textContent = "Consultando disponibilidad...";
-            horasStatus.className = 'status-sending';
-            checkBtn.disabled = true; 
-            
-            const url = `${n8nDisponibilidadUrl}?date=${fechaSeleccionada}`;
+            consultaStatus.textContent = "Buscando disponibilidad...";
+            consultaStatus.className = 'status-sending';
+            checkBtn.disabled = true;
+            calendarioContainer.style.display = 'none';
+            pasoHora.style.display = 'none';
+
+            const url = n8nDisponibilidadUrl; // URL del webhook GET
             const plazasDeseadas = parseInt(personasSeleccionadas);
 
             try {
-                const response = await fetch(url);
+                // CAMBIO: Hacemos un 'GET' al workflow de disponibilidad
+                const response = await fetch(url, { method: 'GET' }); 
                 if (!response.ok) { throw new Error('El servidor de n8n no respondió bien.'); }
                 
-                const disponibilidad = await response.json(); // Ej: {"12:00": 20, "12:30": 50}
-                
-                let horasDisponibles = 0;
-                
-                document.querySelectorAll('.boton-hora').forEach(boton => {
-                    const hora = boton.dataset.hora;
-                    const reservasActuales = disponibilidad[hora] || 0;
-                    const plazasRestantes = limitePersonasPorHora - reservasActuales;
-                    
-                    boton.classList.remove('selected');
+                // n8n devuelve: [ {"Fecha": "2025-10-25", "Hora": "12:00", "Personas": "5"}, ... ]
+                const todasLasReservas = await response.json(); 
 
-                    if (plazasDeseadas > plazasRestantes) {
-                        boton.disabled = true;
-                        boton.textContent = `${hora} (Completo)`;
-                    } else {
-                        boton.disabled = false;
-                        boton.textContent = `${hora} (${plazasRestantes} disp.)`;
-                        horasDisponibles++;
+                // CAMBIO: Procesamos la lista cruda para crear nuestro resumen
+                disponibilidadCache = {}; // Resetear caché
+                diasCompletos = [];
+                
+                for (const reserva of todasLasReservas) {
+                    const fecha = reserva.Fecha;
+                    const hora = reserva.Hora;
+                    // Google Sheets devuelve números como strings, hay que convertirlos
+                    const personas = parseInt(reserva.Personas) || 0; 
+
+                    if (!fecha || !hora) continue; // Ignorar filas vacías
+
+                    if (!disponibilidadCache[fecha]) {
+                        disponibilidadCache[fecha] = {}; // Crear objeto para el día
+                    }
+                    if (!disponibilidadCache[fecha][hora]) {
+                        disponibilidadCache[fecha][hora] = 0; // Crear contador para la hora
+                    }
+                    
+                    // Sumar las personas de esta reserva
+                    disponibilidadCache[fecha][hora] += personas; 
+                }
+
+                // Ahora que 'disponibilidadCache' está lleno, procesamos los días completos
+                Object.keys(disponibilidadCache).forEach(dia => {
+                    const horasOcupadas = disponibilidadCache[dia];
+                    let horasLlenas = 0;
+                    
+                    todasLasHoras.forEach(hora => {
+                        const reservasActuales = horasOcupadas[hora] || 0;
+                        if ((reservasActuales + plazasDeseadas) > limitePersonasPorHora) {
+                            horasLlenas++;
+                        }
+                    });
+                    
+                    if (horasLlenas === todasLasHoras.length) {
+                        diasCompletos.push(dia);
                     }
                 });
                 
-                if (horasDisponibles > 0) {
-                     horasStatus.textContent = `Mostrando ${horasDisponibles} franjas horarias disponibles:`;
-                     horasStatus.className = 'status-success';
-                } else {
-                     horasStatus.textContent = `Lo sentimos, no hay plazas para ${plazasDeseadas} personas ese día.`;
-                     horasStatus.className = 'status-error';
-                }
+                // Éxito: Mostramos el calendario
+                consultaStatus.textContent = "¡Disponibilidad cargada!";
+                consultaStatus.className = 'status-success';
+                calendarioContainer.style.display = 'block';
+                
+                // Aviso sobre los días que no se pueden deshabilitar
+                horasStatus.textContent = `Selecciona un día. Días completos detectados: ${diasCompletos.length}`;
 
             } catch (error) {
                 console.error("Error al consultar disponibilidad:", error);
-                horasStatus.textContent = "Error de red al consultar las horas.";
-                horasStatus.className = 'status-error';
+                consultaStatus.textContent = "Error de red al consultar disponibilidad. Revisa la consola (F12).";
+                consultaStatus.className = 'status-error';
             } finally {
-                checkBtn.disabled = false;
+                checkBtn.disabled = false; // Reactivamos el botón
             }
         }
         
-        // Actualiza el resumen y el botón de envío
-        function actualizarResumenFinal() {
-            const todosRellenos = datosPersonalesCompletos && fechaSeleccionada && horaSeleccionada;
+        // Filtra las horas usando la caché (SIN llamar a n8n)
+        function filtrarHorasDisponibles() {
+            const plazasDeseadas = parseInt(personasSeleccionadas);
+            // Usa la caché que llenamos en 'consultarDisponibilidadTotal'
+            const disponibilidadDia = disponibilidadCache[fechaSeleccionada] || {}; 
+            let horasDisponibles = 0;
 
-            if (!todosRellenos) {
-                if (!datosPersonalesCompletos) {
-                    resultadoDiv.innerHTML = '<p style="font-size: 1rem; color: #777; text-align: center;">Completa los primeros pasos.</p>';
+            if (diasCompletos.includes(fechaSeleccionada)) {
+                horasStatus.textContent = `Lo sentimos, el día ${fechaSeleccionada} está completo.`;
+                horasStatus.className = 'status-error';
+                pasoHora.style.display = 'none';
+                return;
+            }
+
+            pasoHora.style.display = 'block';
+            
+            document.querySelectorAll('.boton-hora').forEach(boton => {
+                const hora = boton.dataset.hora;
+                const reservasActuales = disponibilidadDia[hora] || 0;
+                const plazasRestantes = limitePersonasPorHora - reservasActuales;
+                
+                boton.classList.remove('selected');
+
+                if (plazasDeseadas > plazasRestantes) {
+                    boton.disabled = true;
+                    boton.textContent = `${hora} (Completo)`;
+                } else {
+                    boton.disabled = false;
+                    boton.textContent = `${hora} (${plazasRestantes} disp.)`;
+                    horasDisponibles++;
+                }
+            });
+
+            if (horasDisponibles > 0) {
+                horasStatus.textContent = `Mostrando ${horasDisponibles} franjas horarias disponibles:`;
+                horasStatus.className = 'status-success';
+            } else {
+                horasStatus.textContent = `No hay plazas para ${plazasDeseadas} personas en las horas restantes de este día.`;
+                horasStatus.className = 'status-error';
+            }
+        }
+        
+        // Actualiza el resumen y el botón de envío final
+        function actualizarResumenFinal() {
+            const datosCompletos = personasSeleccionadas && nombreSeleccionado && telefonoSeleccionado && emailSeleccionado;
+            const reservaCompleta = datosCompletos && fechaSeleccionada && horaSeleccionada;
+
+            if (!reservaCompleta) {
+                if (!datosCompletos) {
+                    resultadoDiv.innerHTML = '<p style="font-size: 1rem; color: #777; text-align: center;">Completa los pasos 1 y 2 y pulsa "Buscar Disponibilidad".</p>';
                 } else {
                      resultadoDiv.innerHTML = '<p style="font-size: 1rem; color: #777; text-align: center;">Selecciona un día y una hora disponible.</p>';
                 }
@@ -451,7 +518,7 @@
             enviarBtn.disabled = false;
         }
         
-        // Función para ENVIAR la reserva (POST)
+        // Función para ENVIAR la reserva (POST) - Sin cambios
         async function enviarDatos() {
             
             submitStatusDiv.textContent = 'Enviando reserva...';
@@ -478,7 +545,7 @@
                 if (response.ok) {
                     submitStatusDiv.textContent = '¡Reserva confirmada con éxito!';
                     submitStatusDiv.className = 'status-success';
-                    document.getElementById('pasoHora').style.display = 'none';
+                    calendarioContainer.style.display = 'none';
                     checkBtn.style.display = 'none';
                 } else {
                     const errorData = await response.json();
