@@ -28,8 +28,6 @@
             color: #1a1a1a;
             margin-bottom: 1.5rem;
         }
-        
-        /* Estilos para los pasos */
         .paso {
             text-align: left;
             margin-top: 1.5rem;
@@ -42,7 +40,6 @@
             color: #333;
         }
         
-        /* Estilos para inputs */
         input[type="date"],
         input[type="text"],
         input[type="tel"],
@@ -65,7 +62,6 @@
             color: #555;
         }
 
-        /* Estilos de botones de selección (Hora y Personas) */
         #contenedorHoras,
         #contenedorPersonas {
             display: grid;
@@ -85,7 +81,7 @@
             cursor: pointer;
             transition: all 0.2s ease;
         }
-        .boton-hora:hover,
+        .boton-hora:hover:not(:disabled),
         .boton-persona:hover {
             background-color: #eee;
             border-color: #ccc;
@@ -97,7 +93,15 @@
             border-color: #004494;
         }
         
-        /* Estilo del Botón de Envío */
+        /* CAMBIO: Estilo para botones desactivados */
+        .boton-hora:disabled {
+            background-color: #f1f1f1;
+            color: #aaa;
+            border-color: #eee;
+            cursor: not-allowed;
+            text-decoration: line-through;
+        }
+
         .boton-enviar {
             font-family: inherit;
             font-size: 1.2rem;
@@ -112,30 +116,22 @@
             width: 100%;
             margin-top: 2rem;
         }
-        
-        .boton-enviar:hover:not(:disabled) {
-            background-color: #004494;
-        }
-        
-        /* Estilo cuando está desactivado */
+        .boton-enviar:hover:not(:disabled) { background-color: #004494; }
         .boton-enviar:disabled {
             background-color: #a0a0a0;
             cursor: not-allowed;
         }
 
-        /* Estilo del Feedback de Envío */
-        #submitStatus {
+        #submitStatus, #horasStatus {
             margin-top: 1rem;
             font-size: 1rem;
             font-weight: 600;
             min-height: 1.2em;
         }
-        .status-success { color: #28a745; } /* Verde */
-        .status-error { color: #dc3545; } /* Rojo */
-        .status-sending { color: #555; } /* Gris */
+        .status-success { color: #28a745; }
+        .status-error { color: #dc3545; }
+        .status-sending { color: #555; }
 
-
-        /* Estilos del Resultado (Resumen) */
         #resultado {
             margin-top: 1.5rem;
             font-size: 1.1rem;
@@ -159,22 +155,12 @@
         <h1>Completa tu Cita</h1>
         
         <div class="paso">
-            <label for="miFecha">1. Elige el día:</label>
-            <input type="date" id="miFecha">
-        </div>
-        
-        <div class="paso">
-            <label>2. Elige la hora:</label>
-            <div id="contenedorHoras"></div>
-        </div>
-        
-        <div class="paso">
-            <label>3. ¿Cuántas personas sois? (1-8):</label>
+            <label>1. ¿Cuántas personas sois? (1-8):</label>
             <div id="contenedorPersonas"></div>
         </div>
-
+        
         <div class="paso" id="pasoDatos">
-            <label>4. Introduce tus datos:</label>
+            <label>2. Introduce tus datos:</label>
             <div class="campo-texto">
                 <label for="miNombre">Nombre:</label>
                 <input type="text" id="miNombre" placeholder="Tu nombre completo">
@@ -188,6 +174,17 @@
                 <input type="email" id="miEmail" placeholder="tu.correo@gmail.com">
             </div>
         </div>
+
+        <div class="paso" id="pasoFecha" style="display: none;">
+            <label for="miFecha">3. Elige el día:</label>
+            <input type="date" id="miFecha">
+        </div>
+        
+        <div class="paso" id="pasoHora" style="display: none;">
+            <label>4. Elige la hora (límite 50 pers.):</label>
+            <div id="horasStatus" class="status-sending"></div>
+            <div id="contenedorHoras"></div>
+        </div>
         
         <button type="button" id="enviarBtn" class="boton-enviar" disabled>
             Confirmar Reserva
@@ -196,37 +193,45 @@
         <div id="submitStatus"></div>
 
         <div id="resultado">
-            <p style="font-size: 1rem; color: #777; text-align: center;">Completa todos los campos.</p>
+            <p style="font-size: 1rem; color: #777; text-align: center;">Completa los primeros pasos.</p>
         </div>
     </div>
 
     <script>
         // --- 1. OBTENER ELEMENTOS ---
-        const fechaInput = document.getElementById('miFecha');
-        const horasDiv = document.getElementById('contenedorHoras');
         const personasDiv = document.getElementById('contenedorPersonas');
         const nombreInput = document.getElementById('miNombre');
         const telefonoInput = document.getElementById('miTelefono');
         const emailInput = document.getElementById('miEmail');
-        const resultadoDiv = document.getElementById('resultado');
+        const fechaInput = document.getElementById('miFecha');
+        const horasDiv = document.getElementById('contenedorHoras');
+        const horasStatus = document.getElementById('horasStatus');
         const enviarBtn = document.getElementById('enviarBtn');
         const submitStatusDiv = document.getElementById('submitStatus');
+        const resultadoDiv = document.getElementById('resultado');
 
-        // --- 2. VARIABLES DE ESTADO ---
-        let fechaSeleccionada = null;
-        let horaSeleccionada = null;
+        // --- 2. CONFIGURACIÓN Y URLs ---
+        
+        // URL para POSTEAR la reserva (la que ya tenías)
+        const n8nWebhookUrl = 'https://n8n-server.griffin-paridae.ts.net/webhook/Reserva';
+        
+        // ¡NUEVO! Pega aquí la URL de tu *NUEVO* webhook (GET)
+        const n8nDisponibilidadUrl = 'PEGA_AQUI_TU_NUEVO_WEBHOOK_DE_DISPONIBILIDAD';
+        
+        // Límite de personas por franja horaria
+        const limitePersonasPorHora = 50;
+
+        // --- 3. VARIABLES DE ESTADO ---
         let personasSeleccionadas = null;
         let nombreSeleccionado = null;
         let telefonoSeleccionado = null;
         let emailSeleccionado = null;
+        let fechaSeleccionada = null;
+        let horaSeleccionada = null;
 
-        // --- 3. CONFIGURACIÓN INICIAL ---
+        // --- 4. INICIALIZACIÓN ---
         
-        // --- ¡CAMBIO REALIZADO! ---
-        // Aquí está tu URL de n8n
-        const n8nWebhookUrl = 'https://n8n-server.griffin-paridae.ts.net/webhook-test/Reserva';
-        
-        // Bloquear días pasados
+        // Bloquear días pasados en el calendario
         function getHoyFormato() {
             const hoy = new Date();
             hoy.setMinutes(hoy.getMinutes() - hoy.getTimezoneOffset());
@@ -234,7 +239,7 @@
         }
         fechaInput.min = getHoyFormato();
 
-        // Generar botones de hora
+        // Generar botones de hora (se generarán todos, luego los filtraremos)
         function generarBotonesHora() {
             for (let hora = 12; hora <= 23; hora++) {
                 const horaStr = hora.toString().padStart(2, '0');
@@ -250,7 +255,6 @@
             boton.dataset.hora = textoHora; 
             horasDiv.appendChild(boton);
         }
-        generarBotonesHora();
         
         // Generar botones de personas
         function generarBotonesPersonas() {
@@ -264,31 +268,26 @@
             boton.dataset.personas = numero;
             personasDiv.appendChild(boton);
         }
+        
+        generarBotonesHora();
         generarBotonesPersonas();
 
-        // --- 4. MANEJADORES DE EVENTOS ---
+        // --- 5. MANEJADORES DE EVENTOS ---
         
-        // Todos los eventos 'change' e 'input' llaman a actualizarResultado()
-        fechaInput.addEventListener('change', () => {
-            fechaSeleccionada = fechaInput.value;
-            actualizarResultado();
-        });
-        horasDiv.addEventListener('click', (e) => {
-            if (e.target.classList.contains('boton-hora')) {
-                horaSeleccionada = e.target.dataset.hora;
-                document.querySelectorAll('.boton-hora').forEach(btn => btn.classList.remove('selected'));
-                e.target.classList.add('selected');
-                actualizarResultado();
-            }
-        });
+        // PASO 1: PERSONAS
         personasDiv.addEventListener('click', (e) => {
             if (e.target.classList.contains('boton-persona')) {
                 personasSeleccionadas = e.target.dataset.personas;
                 document.querySelectorAll('.boton-persona').forEach(btn => btn.classList.remove('selected'));
                 e.target.classList.add('selected');
+                
+                // CAMBIO: Mostrar el calendario (Paso 3)
+                document.getElementById('pasoFecha').style.display = 'block';
                 actualizarResultado();
             }
         });
+
+        // PASO 2: DATOS
         nombreInput.addEventListener('input', () => {
             nombreSeleccionado = nombreInput.value.trim();
             actualizarResultado();
@@ -301,19 +300,107 @@
             emailSeleccionado = emailInput.value.trim();
             actualizarResultado();
         });
+
+        // PASO 3: FECHA
+        fechaInput.addEventListener('change', () => {
+            fechaSeleccionada = fechaInput.value;
+            horaSeleccionada = null; // Reiniciar hora si cambia el día
+            
+            // CAMBIO: Llamar a n8n para ver la disponibilidad
+            consultarDisponibilidad();
+            actualizarResultado();
+        });
+
+        // PASO 4: HORA
+        horasDiv.addEventListener('click', (e) => {
+            // Solo permitir clic si el botón no está desactivado
+            if (e.target.classList.contains('boton-hora') && !e.target.disabled) {
+                horaSeleccionada = e.target.dataset.hora;
+                document.querySelectorAll('.boton-hora').forEach(btn => btn.classList.remove('selected'));
+                e.target.classList.add('selected');
+                actualizarResultado();
+            }
+        });
         
-        // Evento para el botón de ENVIAR
+        // PASO 5: ENVIAR
         enviarBtn.addEventListener('click', enviarDatos);
 
-        // --- 5. FUNCIONES ---
         
-        // Esta función ahora también activa/desactiva el botón de envío
+        // --- 6. FUNCIONES PRINCIPALES ---
+
+        // ¡NUEVA FUNCIÓN! Consulta el webhook GET de n8n
+        async function consultarDisponibilidad() {
+            if (n8nDisponibilidadUrl === 'PEGA_AQUI_TU_NUEVO_WEBHOOK_DE_DISPONIBILIDAD') {
+                horasStatus.textContent = "Error: URL de disponibilidad no configurada.";
+                horasStatus.className = 'status-error';
+                return;
+            }
+            
+            // Mostrar "cargando" y el contenedor de horas
+            document.getElementById('pasoHora').style.display = 'block';
+            horasStatus.textContent = "Consultando disponibilidad...";
+            horasStatus.className = 'status-sending';
+            
+            const url = `${n8nDisponibilidadUrl}?date=${fechaSeleccionada}`;
+            const plazasDeseadas = parseInt(personasSeleccionadas);
+
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error('El servidor de n8n no respondió bien.');
+                }
+                
+                // n8n devuelve: {"12:00": 20, "12:30": 50, ...}
+                const disponibilidad = await response.json(); 
+                
+                let horasDisponibles = 0;
+                
+                // Iterar sobre todos los botones de hora y filtrarlos
+                document.querySelectorAll('.boton-hora').forEach(boton => {
+                    const hora = boton.dataset.hora;
+                    const reservasActuales = disponibilidad[hora] || 0;
+                    const plazasRestantes = limitePersonasPorHora - reservasActuales;
+                    
+                    boton.classList.remove('selected'); // Limpiar selección previa
+
+                    if (plazasDeseadas > plazasRestantes) {
+                        // DESACTIVAR BOTÓN
+                        boton.disabled = true;
+                        boton.textContent = `${hora} (Completo)`;
+                    } else {
+                        // ACTIVAR BOTÓN
+                        boton.disabled = false;
+                        boton.textContent = `${hora} (${plazasRestantes} disp.)`;
+                        horasDisponibles++;
+                    }
+                });
+                
+                if (horasDisponibles > 0) {
+                     horasStatus.textContent = `Mostrando ${horasDisponibles} franjas horarias disponibles:`;
+                     horasStatus.className = 'status-success';
+                } else {
+                     horasStatus.textContent = `Lo sentimos, no hay plazas para ${plazasDeseadas} personas ese día.`;
+                     horasStatus.className = 'status-error';
+                }
+
+            } catch (error) {
+                console.error("Error al consultar disponibilidad:", error);
+                horasStatus.textContent = "Error de red al consultar las horas.";
+                horasStatus.className = 'status-error';
+            }
+        }
+        
+        // Función para actualizar el resumen y el botón de envío
         function actualizarResultado() {
             // Comprobar que TODOS los campos estén rellenos
-            const todosRellenos = fechaSeleccionada && horaSeleccionada && personasSeleccionadas && nombreSeleccionado && telefonoSeleccionado && emailSeleccionado;
+            const todosRellenos = personasSeleccionadas && nombreSeleccionado && telefonoSeleccionado && emailSeleccionado && fechaSeleccionada && horaSeleccionada;
 
             if (!todosRellenos) {
-                resultadoDiv.innerHTML = '<p style="font-size: 1rem; color: #777; text-align: center;">Completa todos los campos.</p>';
+                if (!personasSeleccionadas || !nombreSeleccionado || !telefonoSeleccionado || !emailSeleccionado) {
+                    resultadoDiv.innerHTML = '<p style="font-size: 1rem; color: #777; text-align: center;">Completa los primeros pasos.</p>';
+                } else {
+                     resultadoDiv.innerHTML = '<p style="font-size: 1rem; color: #777; text-align: center;">Selecciona un día y una hora disponible.</p>';
+                }
                 enviarBtn.disabled = true; // Botón desactivado
                 return;
             }
@@ -338,54 +425,47 @@
             enviarBtn.disabled = false;
         }
         
-        // Función ASÍNCRONA para enviar los datos
+        // Función ASÍNCRONA para enviar los datos (POST)
+        // Esta función no necesita casi cambios
         async function enviarDatos() {
             
-            // 1. Mostrar estado y desactivar botón
             submitStatusDiv.textContent = 'Enviando reserva...';
             submitStatusDiv.className = 'status-sending';
             enviarBtn.disabled = true;
 
-            // 2. Crear el objeto de datos (el "payload") que recibirá n8n
             const datosReserva = {
                 fecha: fechaSeleccionada,
                 hora: horaSeleccionada,
-                personas: parseInt(personasSeleccionadas), // Lo enviamos como número
+                personas: parseInt(personasSeleccionadas),
                 nombre: nombreSeleccionado,
                 telefono: telefonoSeleccionado,
                 email: emailSeleccionado,
                 fechaEnvioISO: new Date().toISOString()
             };
 
-            // 3. Usar 'fetch' para enviar los datos
             try {
                 const response = await fetch(n8nWebhookUrl, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    // Convertimos nuestro objeto de JS a un string JSON
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(datosReserva)
                 });
 
-                // 4. Comprobar la respuesta del servidor
                 if (response.ok) {
-                    // ¡Éxito!
                     submitStatusDiv.textContent = '¡Reserva confirmada con éxito!';
                     submitStatusDiv.className = 'status-success';
+                    // Opcional: Ocultar botones para evitar doble reserva
+                    document.getElementById('pasoHora').style.display = 'none';
                 } else {
-                    // Error del servidor (n8n devolvió un error)
                     const errorData = await response.json();
                     submitStatusDiv.textContent = `Error: ${errorData.message || 'No se pudo procesar la reserva.'}`;
                     submitStatusDiv.className = 'status-error';
-                    enviarBtn.disabled = false; // Reactivamos el botón para reintentar
+                    enviarBtn.disabled = false;
                 }
             } catch (error) {
-                // Error de red (no se pudo conectar con n8n)
                 console.error('Error de red:', error);
                 submitStatusDiv.textContent = 'Error de red. Revisa tu conexión.';
                 submitStatusDiv.className = 'status-error';
-                enviarBtn.disabled = false; // Reactivamos el botón para reintentar
+                enviarBtn.disabled = false;
             }
         }
 
