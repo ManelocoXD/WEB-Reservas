@@ -6,7 +6,6 @@
     <title>Reserva de Cita</title>
     
     <style>
-        /* (Estilos CSS idénticos a la versión anterior) */
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             display: grid;
@@ -94,6 +93,7 @@
             border-color: #004494;
         }
         
+        /* ESTADO: 100% Lleno (Gris) */
         .boton-hora:disabled {
             background-color: #f1f1f1;
             color: #aaa;
@@ -101,6 +101,18 @@
             cursor: not-allowed;
             text-decoration: line-through;
         }
+
+        /* --- CAMBIO: Nuevo estilo para "No hay sitio suficiente" (Rojo) --- */
+        .boton-hora.no-suficiente {
+            background-color: #fff0f0; /* Fondo rojo pálido */
+            color: #dc3545; /* Texto rojo oscuro */
+            border-color: #dc3545; /* Borde rojo */
+            cursor: not-allowed;
+            text-decoration: none; /* Sin tachar, para mostrar las plazas restantes */
+        }
+        /* --- FIN DEL CAMBIO --- */
+
+
         .boton-consultar {
             font-family: inherit;
             font-size: 1.1rem;
@@ -246,6 +258,8 @@
         // --- 2. CONFIGURACIÓN Y URLs ---
         const n8nWebhookUrl = 'https://n8n-server.griffin-paridae.ts.net/webhook/Reserva';
         const n8nDisponibilidadUrl = 'https://n8n-server.griffin-paridae.ts.net/webhook/disponibilidad'; 
+        
+        // ¡Límite establecido aquí!
         const limitePersonasPorHora = 50;
 
         // --- 3. VARIABLES DE ESTADO ---
@@ -256,7 +270,7 @@
         let fechaSeleccionada = null;
         let horaSeleccionada = null;
         
-        let disponibilidadCache = {}; // Guardará el resumen: {"2025-10-25": {"12:00": 45}, ...}
+        let disponibilidadCache = {}; 
         let diasCompletos = [];
         let todasLasHoras = [];
 
@@ -345,6 +359,7 @@
 
         // PASO 5: HORA
         horasDiv.addEventListener('click', (e) => {
+            // Solo se puede hacer clic si NO está deshabilitado
             if (e.target.classList.contains('boton-hora') && !e.target.disabled) {
                 horaSeleccionada = e.target.dataset.hora;
                 document.querySelectorAll('.boton-hora').forEach(btn => btn.classList.remove('selected'));
@@ -375,8 +390,6 @@
             calendarioContainer.style.display = 'none';
             pasoHora.style.display = 'none';
 
-            // CAMBIO: La URL ahora es una consulta GET simple.
-            // n8n debe devolver el JSON completo de ocupación.
             const url = n8nDisponibilidadUrl; 
             const plazasDeseadas = parseInt(personasSeleccionadas);
 
@@ -385,7 +398,6 @@
                 if (!response.ok) { throw new Error('El servidor de n8n no respondió bien.'); }
                 
                 // n8n devuelve: {"2025-10-25": {"12:00": 20, "12:30": 50}, ...}
-                // (Gracias a tu nuevo script en el nodo Code)
                 disponibilidadCache = await response.json(); 
 
                 // Procesamos la caché para encontrar días 100% completos
@@ -396,13 +408,11 @@
                     
                     todasLasHoras.forEach(hora => {
                         const reservasActuales = horasOcupadas[hora] || 0;
-                        // Comprobamos si la hora estaría llena CON esta nueva reserva
                         if ((reservasActuales + plazasDeseadas) > limitePersonasPorHora) {
                             horasLlenas++;
                         }
                     });
                     
-                    // Si todas las franjas horarias de ese día están llenas, marcamos el día
                     if (horasLlenas === todasLasHoras.length) {
                         diasCompletos.push(dia);
                     }
@@ -413,7 +423,6 @@
                 consultaStatus.className = 'status-success';
                 calendarioContainer.style.display = 'block';
                 
-                // Aviso sobre los días que no se pueden deshabilitar en el input[type=date]
                 horasStatus.textContent = `Selecciona un día. Días completos detectados: ${diasCompletos.length}`;
 
             } catch (error) {
@@ -425,7 +434,7 @@
             }
         }
         
-        // Filtra las horas usando la caché (SIN llamar a n8n)
+        // --- CAMBIO: Lógica de filtrado de horas actualizada ---
         function filtrarHorasDisponibles() {
             const plazasDeseadas = parseInt(personasSeleccionadas);
             const disponibilidadDia = disponibilidadCache[fechaSeleccionada] || {}; 
@@ -447,24 +456,37 @@
                 const reservasActuales = disponibilidadDia[hora] || 0;
                 const plazasRestantes = limitePersonasPorHora - reservasActuales;
                 
+                // Limpiar estados de la filtración anterior
                 boton.classList.remove('selected');
+                boton.classList.remove('no-suficiente'); // ¡Quitar clase roja!
+                boton.disabled = false; // Habilitarlo por defecto
 
-                if (plazasDeseadas > plazasRestantes) {
+                
+                if (plazasRestantes <= 0) {
+                    // CASO 1: 100% Lleno (0 o menos plazas)
+                    // (Esto incluye el caso de 51/50)
                     boton.disabled = true;
                     boton.textContent = `${hora} (Completo)`;
+
+                } else if (plazasDeseadas > plazasRestantes) {
+                    // CASO 2: No hay sitio para TU GRUPO (ej. pides 2, queda 1)
+                    boton.disabled = true; // Deshabilitado (no se puede clicar)
+                    boton.classList.add('no-suficiente'); // ¡Se pone rojo!
+                    boton.textContent = `${hora} (${plazasRestantes} disp.)`; // Muestra la plaza restante
+                
                 } else {
+                    // CASO 3: Hay sitio
                     boton.disabled = false;
                     boton.textContent = `${hora} (${plazasRestantes} disp.)`;
                     horasDisponibles++;
                 }
             });
 
+            // Actualizar mensaje de estado
             if (horasDisponibles > 0) {
                 horasStatus.textContent = `Mostrando ${horasDisponibles} franjas horarias disponibles:`;
                 horasStatus.className = 'status-success';
             } else {
-                // Esto ocurre si el día no estaba 100% lleno, pero no queda ninguna
-                // franja con suficientes plazas para el grupo (ej. pides 8 y solo quedan huecos de 5)
                 horasStatus.textContent = `Lo sentimos, no hay plazas para ${plazasDeseadas} personas en este día.`;
                 horasStatus.className = 'status-error';
             }
@@ -533,6 +555,7 @@
                     calendarioContainer.style.display = 'none';
                     checkBtn.style.display = 'none';
                 } else {
+                    // Esto manejará el error de "plazas recién llenadas"
                     const errorData = await response.json();
                     submitStatusDiv.textContent = `Error: ${errorData.message || 'No se pudo procesar la reserva.'}`;
                     submitStatusDiv.className = 'status-error';
