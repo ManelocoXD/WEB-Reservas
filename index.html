@@ -6,7 +6,7 @@
     <title>Reserva de Cita</title>
     
     <style>
-        /* (El CSS es el mismo que en la respuesta anterior, no hay cambios) */
+        /* (Estilos CSS idénticos a la versión anterior) */
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             display: grid;
@@ -366,7 +366,7 @@
             actualizarResumenFinal();
         }
 
-        // Llama a n8n (GET) y recibe la lista de TODAS las reservas
+        // Llama a n8n (GET) y recibe la lista de TODAS las reservas agrupadas
         async function consultarDisponibilidadTotal() {
             
             consultaStatus.textContent = "Buscando disponibilidad...";
@@ -375,52 +375,34 @@
             calendarioContainer.style.display = 'none';
             pasoHora.style.display = 'none';
 
-            const url = n8nDisponibilidadUrl; // URL del webhook GET
+            // CAMBIO: La URL ahora es una consulta GET simple.
+            // n8n debe devolver el JSON completo de ocupación.
+            const url = n8nDisponibilidadUrl; 
             const plazasDeseadas = parseInt(personasSeleccionadas);
 
             try {
-                // CAMBIO: Hacemos un 'GET' al workflow de disponibilidad
                 const response = await fetch(url, { method: 'GET' }); 
                 if (!response.ok) { throw new Error('El servidor de n8n no respondió bien.'); }
                 
-                // n8n devuelve: [ {"Fecha": "2025-10-25", "Hora": "12:00", "Personas": "5"}, ... ]
-                const todasLasReservas = await response.json(); 
+                // n8n devuelve: {"2025-10-25": {"12:00": 20, "12:30": 50}, ...}
+                // (Gracias a tu nuevo script en el nodo Code)
+                disponibilidadCache = await response.json(); 
 
-                // CAMBIO: Procesamos la lista cruda para crear nuestro resumen
-                disponibilidadCache = {}; // Resetear caché
+                // Procesamos la caché para encontrar días 100% completos
                 diasCompletos = [];
-                
-                for (const reserva of todasLasReservas) {
-                    const fecha = reserva.Fecha;
-                    const hora = reserva.Hora;
-                    // Google Sheets devuelve números como strings, hay que convertirlos
-                    const personas = parseInt(reserva.Personas) || 0; 
-
-                    if (!fecha || !hora) continue; // Ignorar filas vacías
-
-                    if (!disponibilidadCache[fecha]) {
-                        disponibilidadCache[fecha] = {}; // Crear objeto para el día
-                    }
-                    if (!disponibilidadCache[fecha][hora]) {
-                        disponibilidadCache[fecha][hora] = 0; // Crear contador para la hora
-                    }
-                    
-                    // Sumar las personas de esta reserva
-                    disponibilidadCache[fecha][hora] += personas; 
-                }
-
-                // Ahora que 'disponibilidadCache' está lleno, procesamos los días completos
                 Object.keys(disponibilidadCache).forEach(dia => {
                     const horasOcupadas = disponibilidadCache[dia];
                     let horasLlenas = 0;
                     
                     todasLasHoras.forEach(hora => {
                         const reservasActuales = horasOcupadas[hora] || 0;
+                        // Comprobamos si la hora estaría llena CON esta nueva reserva
                         if ((reservasActuales + plazasDeseadas) > limitePersonasPorHora) {
                             horasLlenas++;
                         }
                     });
                     
+                    // Si todas las franjas horarias de ese día están llenas, marcamos el día
                     if (horasLlenas === todasLasHoras.length) {
                         diasCompletos.push(dia);
                     }
@@ -431,7 +413,7 @@
                 consultaStatus.className = 'status-success';
                 calendarioContainer.style.display = 'block';
                 
-                // Aviso sobre los días que no se pueden deshabilitar
+                // Aviso sobre los días que no se pueden deshabilitar en el input[type=date]
                 horasStatus.textContent = `Selecciona un día. Días completos detectados: ${diasCompletos.length}`;
 
             } catch (error) {
@@ -446,17 +428,18 @@
         // Filtra las horas usando la caché (SIN llamar a n8n)
         function filtrarHorasDisponibles() {
             const plazasDeseadas = parseInt(personasSeleccionadas);
-            // Usa la caché que llenamos en 'consultarDisponibilidadTotal'
             const disponibilidadDia = disponibilidadCache[fechaSeleccionada] || {}; 
             let horasDisponibles = 0;
 
+            // Comprobar si el día entero está en nuestra lista de "completos"
             if (diasCompletos.includes(fechaSeleccionada)) {
-                horasStatus.textContent = `Lo sentimos, el día ${fechaSeleccionada} está completo.`;
+                horasStatus.textContent = `Lo sentimos, el día ${fechaSeleccionada} está completo. Por favor, selecciona otro día.`;
                 horasStatus.className = 'status-error';
-                pasoHora.style.display = 'none';
+                pasoHora.style.display = 'none'; // Ocultar botones de hora
                 return;
             }
 
+            // Si el día no está 100% completo, mostramos las horas
             pasoHora.style.display = 'block';
             
             document.querySelectorAll('.boton-hora').forEach(boton => {
@@ -480,7 +463,9 @@
                 horasStatus.textContent = `Mostrando ${horasDisponibles} franjas horarias disponibles:`;
                 horasStatus.className = 'status-success';
             } else {
-                horasStatus.textContent = `No hay plazas para ${plazasDeseadas} personas en las horas restantes de este día.`;
+                // Esto ocurre si el día no estaba 100% lleno, pero no queda ninguna
+                // franja con suficientes plazas para el grupo (ej. pides 8 y solo quedan huecos de 5)
+                horasStatus.textContent = `Lo sentimos, no hay plazas para ${plazasDeseadas} personas en este día.`;
                 horasStatus.className = 'status-error';
             }
         }
