@@ -390,7 +390,8 @@
             calendarioContainer.style.display = 'none';
             pasoHora.style.display = 'none';
 
-            const url = n8nDisponibilidadUrl; 
+            // [Código NUEVO para index.html]
+            const url = `${n8nDisponibilidadUrl}?personas=${personasSeleccionadas}`; 
             const plazasDeseadas = parseInt(personasSeleccionadas);
 
             try {
