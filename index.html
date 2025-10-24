@@ -97,7 +97,7 @@
             border-color: #004494;
         }
         
-        /* --- CAMBIO: Estilo del Botón de Envío --- */
+        /* Estilo del Botón de Envío */
         .boton-enviar {
             font-family: inherit;
             font-size: 1.2rem;
@@ -123,7 +123,7 @@
             cursor: not-allowed;
         }
 
-        /* --- CAMBIO: Estilo del Feedback de Envío --- */
+        /* Estilo del Feedback de Envío */
         #submitStatus {
             margin-top: 1rem;
             font-size: 1rem;
@@ -209,8 +209,6 @@
         const telefonoInput = document.getElementById('miTelefono');
         const emailInput = document.getElementById('miEmail');
         const resultadoDiv = document.getElementById('resultado');
-        
-        // CAMBIO: Nuevos elementos
         const enviarBtn = document.getElementById('enviarBtn');
         const submitStatusDiv = document.getElementById('submitStatus');
 
@@ -224,8 +222,9 @@
 
         // --- 3. CONFIGURACIÓN INICIAL ---
         
-        // CAMBIO: ¡IMPORTANTE! Pega tu URL de n8n aquí
-        const n8nWebhookUrl = 'https://n8n-server.griffin-paridae.ts.net/webhook/4ed63de3-8e7e-4260-b4db-ee318e1b0b7b';
+        // --- ¡CAMBIO REALIZADO! ---
+        // Aquí está tu URL de n8n
+        const n8nWebhookUrl = 'https://n8n-server.griffin-paridae.ts.net/webhook/Reserva';
         
         // Bloquear días pasados
         function getHoyFormato() {
@@ -235,7 +234,7 @@
         }
         fechaInput.min = getHoyFormato();
 
-        // Generar botones de hora (sin cambios)
+        // Generar botones de hora
         function generarBotonesHora() {
             for (let hora = 12; hora <= 23; hora++) {
                 const horaStr = hora.toString().padStart(2, '0');
@@ -253,7 +252,7 @@
         }
         generarBotonesHora();
         
-        // Generar botones de personas (sin cambios)
+        // Generar botones de personas
         function generarBotonesPersonas() {
             for (let i = 1; i <= 8; i++) { crearBotonPersona(i); }
         }
@@ -303,12 +302,12 @@
             actualizarResultado();
         });
         
-        // CAMBIO: Nuevo evento para el botón de ENVIAR
+        // Evento para el botón de ENVIAR
         enviarBtn.addEventListener('click', enviarDatos);
 
         // --- 5. FUNCIONES ---
         
-        // CAMBIO: Esta función ahora también activa/desactiva el botón de envío
+        // Esta función ahora también activa/desactiva el botón de envío
         function actualizarResultado() {
             // Comprobar que TODOS los campos estén rellenos
             const todosRellenos = fechaSeleccionada && horaSeleccionada && personasSeleccionadas && nombreSeleccionado && telefonoSeleccionado && emailSeleccionado;
@@ -339,22 +338,15 @@
             enviarBtn.disabled = false;
         }
         
-        // CAMBIO: Nueva función ASÍNCRONA para enviar los datos
+        // Función ASÍNCRONA para enviar los datos
         async function enviarDatos() {
             
-            // 1. Comprobar que la URL del webhook esté puesta
-            if (n8nWebhookUrl === 'https://n8n-server.griffin-paridae.ts.net/webhook/4ed63de3-8e7e-4260-b4db-ee318e1b0b7b') {
-                submitStatusDiv.textContent = 'Error: La URL del webhook no está configurada.';
-                submitStatusDiv.className = 'status-error';
-                return;
-            }
-            
-            // 2. Mostrar estado y desactivar botón para evitar doble clic
+            // 1. Mostrar estado y desactivar botón
             submitStatusDiv.textContent = 'Enviando reserva...';
             submitStatusDiv.className = 'status-sending';
             enviarBtn.disabled = true;
 
-            // 3. Crear el objeto de datos (el "payload") que recibirá n8n
+            // 2. Crear el objeto de datos (el "payload") que recibirá n8n
             const datosReserva = {
                 fecha: fechaSeleccionada,
                 hora: horaSeleccionada,
@@ -362,10 +354,10 @@
                 nombre: nombreSeleccionado,
                 telefono: telefonoSeleccionado,
                 email: emailSeleccionado,
-                fechaEnvioISO: new Date().toISOString() // Buena práctica
+                fechaEnvioISO: new Date().toISOString()
             };
 
-            // 4. Usar 'fetch' para enviar los datos
+            // 3. Usar 'fetch' para enviar los datos
             try {
                 const response = await fetch(n8nWebhookUrl, {
                     method: 'POST',
@@ -376,13 +368,11 @@
                     body: JSON.stringify(datosReserva)
                 });
 
-                // 5. Comprobar la respuesta del servidor
+                // 4. Comprobar la respuesta del servidor
                 if (response.ok) {
                     // ¡Éxito!
                     submitStatusDiv.textContent = '¡Reserva confirmada con éxito!';
                     submitStatusDiv.className = 'status-success';
-                    // Dejamos el botón desactivado para no enviar de nuevo
-                    // Opcional: podrías resetear el formulario aquí
                 } else {
                     // Error del servidor (n8n devolvió un error)
                     const errorData = await response.json();
