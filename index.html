@@ -225,7 +225,7 @@
         // --- 3. CONFIGURACIÓN INICIAL ---
         
         // CAMBIO: ¡IMPORTANTE! Pega tu URL de n8n aquí
-        const n8nWebhookUrl = 'https://n8n-server.griffin-paridae.ts.net/webhook-test/4ed63de3-8e7e-4260-b4db-ee318e1b0b7b';
+        const n8nWebhookUrl = 'https://n8n-server.griffin-paridae.ts.net/webhook/4ed63de3-8e7e-4260-b4db-ee318e1b0b7b';
         
         // Bloquear días pasados
         function getHoyFormato() {
@@ -343,7 +343,7 @@
         async function enviarDatos() {
             
             // 1. Comprobar que la URL del webhook esté puesta
-            if (n8nWebhookUrl === 'https://n8n-server.griffin-paridae.ts.net/webhook-test/4ed63de3-8e7e-4260-b4db-ee318e1b0b7b') {
+            if (n8nWebhookUrl === 'https://n8n-server.griffin-paridae.ts.net/webhook/4ed63de3-8e7e-4260-b4db-ee318e1b0b7b') {
                 submitStatusDiv.textContent = 'Error: La URL del webhook no está configurada.';
                 submitStatusDiv.className = 'status-error';
                 return;
